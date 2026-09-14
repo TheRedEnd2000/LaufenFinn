@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lauf-Freischaltung</title>
+<style>
+  body {
+    font-family: -apple-system, Roboto, sans-serif;
+    background: #111; color: #fff; margin: 0; padding: 24px;
+    text-align: center;
+  }
+  h1 { font-size: 22px; margin-bottom: 4px; }
+  .sub { color: #999; font-size: 14px; margin-bottom: 32px; }
+  .distance { font-size: 56px; font-weight: bold; margin: 20px 0; }
+  .unit { font-size: 18px; color: #999; }
+  .stat { display: flex; justify-content: space-around; margin: 24px 0; }
+  .stat div { font-size: 13px; color: #999; }
+  .stat span { display: block; font-size: 20px; color: #fff; font-weight: bold; }
+  button {
+    background: #22c55e; color: #111; border: none; border-radius: 12px;
+    padding: 16px 32px; font-size: 18px; font-weight: bold; width: 100%;
+    margin-top: 12px;
+  }
+  button:disabled { background: #444; color: #888; }
+  #pinBox {
+    display: none; margin-top: 32px; padding: 24px; background: #1c1c1c;
+    border-radius: 16px;
+  }
+  #pinBox .pin { font-size: 42px; letter-spacing: 8px; font-weight: bold; color: #22c55e; }
+  #settings { margin-top: 40px; text-align: left; font-size: 12px; color: #666; }
+  #settings input { width: 100%; margin: 4px 0 12px 0; padding: 8px; border-radius: 6px; border: 1px solid #333; background: #1c1c1c; color: #fff; }
+  #status { color: #999; font-size: 13px; margin-top: 8px; min-height: 18px; }
+</style>
+</head>
+<body>
+
+<h1>Lauf-Freischaltung</h1>
+<div class="sub">2 km laufen, um den PC zu entsperren</div>
+
+<div class="distance"><span id="dist">0.00</span><span class="unit"> km</span></div>
+
+<div class="stat">
+  <div>Tempo<span id="pace">--</span></div>
+  <div>Zeit<span id="time">00:00</span></div>
+  <div>Status<span id="anticheat">ok</span></div>
+</div>
+
+<button id="startBtn" onclick="startTracking()">Lauf starten</button>
+<div id="status"></div>
+
+<div id="pinBox">
+  <div>Geschafft! Dein PIN:</div>
+  <div class="pin" id="pinDisplay">------</div>
+  <div class="sub">Gueltig 10 Minuten</div>
+</div>
+
+<div id="settings">
+  <div>Einstellungen (einmalig ausfuellen, wird lokal gespeichert)</div>
+  <label>GitHub Gist ID</label>
+  <input id="gistId" placeholder="z.B. abc123...">
+  <label>GitHub Token</label>
+  <input id="ghToken" type="password" placeholder="ghp_...">
+  <button style="background:#333;color:#fff" onclick="saveSettings()">Speichern</button>
+</div>
+
+<script>
+const TARGET_KM = 2.0;
+const MIN_PACE_KMH = 5;   // langsamer = evtl. nicht gelaufen
+const MAX_PACE_KMH = 16;  // schneller = evtl. Auto/Rad -> wird nicht gezaehlt
+const GIST_FILENAME = "pin.json";
+
+let watchId = null;
+let points = [];
+let totalKm = 0;
+let validKm = 0; // nur Distanz mit plausiblem Tempo
+let startTime = null;
+let timerInterval = null;
+let anomalyStreak = 0;
+
+function loadSettings() {
+  document.getElementById("gistId").value = localStorage.getItem("gistId") || "";
+  document.getElementById("ghToken").value = localStorage.getItem("ghToken") || "";
+}
+function saveSettings() {
+  localStorage.setItem("gistId", document.getElementById("gistId").value.trim());
+  localStorage.setItem("ghToken", document.getElementById("ghToken").value.trim());
+  document.getElementById("status").innerText = "Gespeichert.";
+}
+loadSettings();
+
+function haversine(lat1, lon1, lat2, lon2) {
+  const R = 6371; // km
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a = Math.sin(dLat / 2) ** 2 +
+            Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+            Math.sin(dLon / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function startTracking() {
+  if (!navigator.geolocation) {
+    document.getElementById("status").innerText = "Kein GPS verfuegbar.";
+    return;
+  }
+  document.getElementById("startBtn").disabled = true;
+  document.getElementById("startBtn").innerText = "Laeuft...";
+  startTime = Date.now();
+  timerInterval = setInterval(updateTimer, 1000);
+
+  watchId = navigator.geolocation.watchPosition(onPosition, onError, {
+    enableHighAccuracy: true,
+    maximumAge: 1000,
+    timeout: 15000,
+  });
+}
+
+function updateTimer() {
+  const secs = Math.floor((Date.now() - startTime) / 1000);
+  const m = String(Math.floor(secs / 60)).padStart(2, "0");
+  const s = String(secs % 60).padStart(2, "0");
+  document.getElementById("time").innerText = `${m}:${s}`;
+}
+
+function onError(err) {
+  document.getElementById("status").innerText = "GPS-Fehler: " + err.message;
+}
+
+function onPosition(pos) {
+  const { latitude, longitude, accuracy } = pos.coords;
+  const now = Date.now();
+
+  if (accuracy > 30) return; // zu ungenau, Punkt ignorieren
+
+  points.push({ lat: latitude, lon: longitude, t: now });
+
+  if (points.length >= 2) {
+    const a = points[points.length - 2];
+    const b = points[points.length - 1];
+    const dKm = haversine(a.lat, a.lon, b.lat, b.lon);
+    const dHrs = (b.t - a.t) / 1000 / 3600;
+    const speedKmh = dHrs > 0 ? dKm / dHrs : 0;
+
+    totalKm += dKm;
+
+    if (speedKmh >= MIN_PACE_KMH && speedKmh <= MAX_PACE_KMH) {
+      validKm += dKm;
+      anomalyStreak = 0;
+      document.getElementById("anticheat").innerText = "ok";
+      document.getElementById("anticheat").style.color = "#22c55e";
+    } else {
+      anomalyStreak++;
+      document.getElementById("anticheat").innerText = "check";
+      document.getElementById("anticheat").style.color = "#f59e0b";
+    }
+    document.getElementById("pace").innerText = speedKmh.toFixed(1) + " km/h";
+  }
+
+  document.getElementById("dist").innerText = validKm.toFixed(2);
+
+  if (validKm >= TARGET_KM) {
+    finishRun();
+  }
+}
+
+async function finishRun() {
+  navigator.geolocation.clearWatch(watchId);
+  clearInterval(timerInterval);
+  document.getElementById("startBtn").innerText = "Geschafft";
+  document.getElementById("status").innerText = "Generiere PIN...";
+
+  const pin = String(Math.floor(100000 + Math.random() * 900000));
+  const expires = Math.floor(Date.now() / 1000) + 10 * 60; // 10 Minuten gueltig
+
+  const gistId = localStorage.getItem("gistId");
+  const token = localStorage.getItem("ghToken");
+
+  if (!gistId || !token) {
+    document.getElementById("status").innerText =
+      "Bitte zuerst Gist ID und Token unten eintragen und speichern.";
+    return;
+  }
+
+  try {
+    const res = await fetch(`https://api.github.com/gists/${gistId}`, {
+      method: "PATCH",
+      headers: {
+        "Authorization": `token ${token}`,
+        "Accept": "application/vnd.github+json",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        files: {
+          [GIST_FILENAME]: {
+            content: JSON.stringify({ pin, expires, used: false }),
+          },
+        },
+      }),
+    });
+    if (!res.ok) throw new Error("HTTP " + res.status);
+
+    document.getElementById("pinDisplay").innerText = pin;
+    document.getElementById("pinBox").style.display = "block";
+    document.getElementById("status").innerText = "";
+  } catch (e) {
+    document.getElementById("status").innerText = "Fehler beim Senden: " + e.message;
+  }
+}
+</script>
+</body>
+</html>
