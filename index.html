@@ -36,7 +36,7 @@
 <body>
 
 <h1>Lauf-Freischaltung</h1>
-<div class="sub">2 km laufen, um den PC zu entsperren</div>
+<div class="sub" id="targetLabel">laufen, um den PC zu entsperren</div>
 
 <div class="distance"><span id="dist">0.00</span><span class="unit"> km</span></div>
 
@@ -65,7 +65,8 @@
 </div>
 
 <script>
-const TARGET_KM = 2.0;
+const TARGET_METERS = 10;  // Ziel-Distanz in Metern -- zum Testen z.B. auf 50 setzen
+const TARGET_KM = TARGET_METERS / 1000;
 const MIN_PACE_KMH = 5;   // langsamer = evtl. nicht gelaufen
 const MAX_PACE_KMH = 16;  // schneller = evtl. Auto/Rad -> wird nicht gezaehlt
 const GIST_FILENAME = "pin.json";
@@ -88,6 +89,10 @@ function saveSettings() {
   document.getElementById("status").innerText = "Gespeichert.";
 }
 loadSettings();
+
+document.getElementById("targetLabel").innerText =
+  (TARGET_METERS >= 1000 ? (TARGET_METERS / 1000) + " km" : TARGET_METERS + " m") +
+  " laufen, um den PC zu entsperren";
 
 function haversine(lat1, lon1, lat2, lon2) {
   const R = 6371; // km
