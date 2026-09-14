@@ -50,13 +50,13 @@
 <div id="status"></div>
 
 <div id="pinBox">
-  <div>Geschafft! Dein PIN:</div>
+  <div>Dein PIN:</div>
   <div class="pin" id="pinDisplay">------</div>
   <div class="sub">Gueltig 10 Minuten</div>
 </div>
 
 <div id="settings">
-  <div>Einstellungen (einmalig ausfuellen, wird lokal gespeichert)</div>
+  <div>Einstellungen</div>
   <label>GitHub Gist ID</label>
   <input id="gistId" placeholder="z.B. abc123...">
   <label>GitHub Token</label>
@@ -65,7 +65,7 @@
 </div>
 
 <script>
-const TARGET_METERS = 10;  // Ziel-Distanz in Metern -- zum Testen z.B. auf 50 setzen
+const TARGET_METERS = 2000;  // Ziel-Distanz in Metern -- zum Testen z.B. auf 50 setzen
 const TARGET_KM = TARGET_METERS / 1000;
 const MIN_PACE_KMH = 5;   // langsamer = evtl. nicht gelaufen
 const MAX_PACE_KMH = 16;  // schneller = evtl. Auto/Rad -> wird nicht gezaehlt
